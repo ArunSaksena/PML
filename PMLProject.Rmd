@@ -1,0 +1,158 @@
+---
+title: "Practical Machine Learning Project"
+output: html_document
+---
+
+**Main Question:**  Can we use quantitative data from accelerometers on wearable devices such as Jawbone Up, Nike FuelBand, and Fitbit to classify how well a person if performing an activity (e.g., barbell lifts)?
+
+**Input Data:**  We are provided links to a Training dataset and a Testing dataset
+
+```{r echo=FALSE}
+Path_to_Training <- "/Users/arunsaksena/Documents/Cisco Files Folder/Backup on August 15 2015/Practical Machine Learning/September 15/Project/Training/pml-training.csv"
+
+Path_to_Testing <- "/Users/arunsaksena/Documents/Cisco Files Folder/Backup on August 15 2015/Practical Machine Learning/September 15/Project/Testing/pml-testing.csv"
+
+```
+
+**Discussion:**  The goal of the project is to predict the manner in which the exercise was done.  The "classe" variable in the Training Dataset provides classification information on how well someone has performed the activity.  The first step is to load the Training dataset and examine the data.
+
+```{r fig.width=8, fig.height=7}
+
+library(caret)
+library(gbm)
+set.seed(3433)
+trainingdata <- read.csv(Path_to_Training)
+
+## Let's look at the dimensions of the trainingdata dataframe
+print("Dimensions of Training Data")
+dim(trainingdata)
+
+## We are also loading Testing Data into a Data Frame.
+## But we don't do anything with it for now...
+testingdata <- read.csv(Path_to_Testing)
+
+## Plot entries by Classe
+barplot(table(trainingdata$classe), col = "wheat", main = "Number of Entries in training by Classe")
+
+```
+
+
+
+**Prediction Study Design:** We first take the training data file, and further split into a training set and a testing set.  Also, since this is a **classification problem**, we will be using **Accuracy** as a measure to evaluate the Machine Learning Models.
+
+We will split the trainingdata dataset further into a training set and a testing set, using p = 0.75 for training.  We want to use as much as possible for training.
+
+```{r}
+
+inTrain <- createDataPartition(y = trainingdata$classe, p = 0.75, list = FALSE)
+training <- trainingdata[inTrain,]
+testing <- trainingdata[-inTrain,]
+
+```
+
+**Features:**  Since the problem we are solving specifically asks to predict on the basis of accelerometer data, we will only use accelerometer variables.  Out of the 160 possible predictors, we focus on the following 20 predictors:
+
+total-accel-belt, var-total-accel-belt, accel-belt-x, accel-belt-y, accel-belt-z,  total-accel-arm, var-accel-arm, accel-arm-x, accel-arm-y, accel-arm-z,   total-accel-dumbbell, var-accel-dumbbell, accel-dumbbell-x, accel-dumbbell-y,  accel-dumbbell-z, total-accel-forearm, var-accel-forearm, accel-forearm-x,  accel-forearm-y, accel-forearm_z
+
+The first step is now to eliminate any predictors for which we have missing values or NA values.
+
+```{r}
+
+## We use the following code to identify if a specific column has NA values
+
+sum(is.na(training$var_accel_dumbbell))
+
+```
+
+Using the sample code above, we determined that the following 4 predictors should not be used in modeling because they have a significant number of NA values:
+
+var-total-accel_belt, var-accel-arm, var-accel-dumbbell, var-accel-forearm
+
+**Algorithm:**  Since this is a classification problem, and the classe variable can have five values (A, B, C, D and E), I decided to use Random Forests, Boosting Trees and Linear Discriminant Analysis as potential algorithms to test.  I will also be using a stacked prediction algorithm using Random Forests to see if combining the predictors will result in improved accuracy.  See code below:
+
+```{r}
+
+### Random Forests Algorithm
+mod3RF <- train( classe ~ total_accel_belt + accel_belt_x +  accel_belt_y +  accel_belt_z + total_accel_arm + accel_arm_x + accel_arm_y + accel_arm_z + total_accel_dumbbell + accel_dumbbell_x + accel_dumbbell_y + accel_dumbbell_z + total_accel_forearm + accel_forearm_x + accel_forearm_y + accel_forearm_z, method = "rf", data = training)
+
+pred3RF <- predict(mod3RF, testing)
+
+RFtable <- table(pred3RF, testing$classe)
+RFtable
+
+RFAccuracy <- sum(diag(RFtable))/sum(colSums(RFtable))
+cat("RF Accuracy =", RFAccuracy)
+
+## Checking in-sample error (which we expect to be much higher than 
+## out-of-sample error, which was RFAccuracy)
+
+pred3RF_training <- predict(mod3RF, training)
+RFtable_training <- table(pred3RF_training, training$classe)
+RFAccuracy_training <- sum(diag(RFtable_training))/sum(colSums(RFtable_training))
+cat("In-Sample RF Accuracy (based on the training dataset) =", RFAccuracy_training)
+
+### Boosted Trees Algorithm
+mod3GBM <- train( classe ~ total_accel_belt + accel_belt_x +  accel_belt_y +  accel_belt_z + total_accel_arm + accel_arm_x + accel_arm_y + accel_arm_z + total_accel_dumbbell + accel_dumbbell_x + accel_dumbbell_y + accel_dumbbell_z + total_accel_forearm + accel_forearm_x + accel_forearm_y + accel_forearm_z, method = "gbm", data = training, verbose = FALSE)
+
+pred3GBM <- predict(mod3GBM, testing)
+
+GBMtable <- table(pred3GBM, testing$classe)
+GBMtable
+
+GBMAccuracy <- sum(diag(GBMtable))/sum(colSums(GBMtable))
+cat("GBM Accuracy =", GBMAccuracy) 
+
+### Linear Discriminant Analysis
+mod3LDA <- train( classe ~ total_accel_belt + accel_belt_x +  accel_belt_y +  accel_belt_z +   total_accel_arm + accel_arm_x + accel_arm_y + accel_arm_z + total_accel_dumbbell + accel_dumbbell_x + accel_dumbbell_y + accel_dumbbell_z + total_accel_forearm + accel_forearm_x + accel_forearm_y + accel_forearm_z, method = "lda", data = training)
+
+pred3LDA <- predict(mod3LDA, testing)
+
+LDAtable <- table(pred3LDA, testing$classe)
+LDAtable
+
+LDAAccuracy <- sum(diag(LDAtable))/sum(colSums(LDAtable))
+cat("LDA Accuracy =", LDAAccuracy)
+
+### Stacking the Models together
+
+predDF <- data.frame(pred3RF, pred3GBM, pred3LDA, classe = testing$classe)
+combModFit <- train(classe ~ ., method = "rf", data = predDF)
+combPred <- predict(combModFit, predDF)
+
+Combtable <- table(combPred, testing$classe)
+Combtable
+
+CombAccuracy <- sum(diag(Combtable))/sum(colSums(Combtable))
+cat("Stacked Model Accuracy =", CombAccuracy)
+
+```
+
+**Discussion on in-sample error / accuracy and out-of-sample error / accuracy:**  We expect the in-sample error to be much smaller (optimistic) than the out-of-sample error.  In the code above, using Random Forests as an example, the **in-sample accuracy**, RFAccuracy_training = 1 (perfect), where as the **out-of-sample accuracy** (RFAccuracy) is 0.94.
+
+The stacked model accuracy is the same as the accuracy using Random Forests.
+
+**Prediction: ** I am now using the models developed above to predict the classe variable for the real testingdata.  Please see code below:
+
+```{r}
+
+testdataPred3RF <- predict(mod3RF, testingdata)
+testdataPred3RF
+
+testdataPred3GBM <- predict(mod3GBM, testingdata)
+testdataPred3GBM
+
+testdataPred3LDA <- predict(mod3LDA, testingdata)
+testdataPred3LDA
+
+predVDF <- data.frame(pred3RF = testdataPred3RF, pred3GBM = testdataPred3GBM, pred3LDA = testdataPred3LDA)
+
+combPredV <- predict(combModFit, predVDF)
+combPredV
+```
+
+**Conclusion:** Based on accuracy of the Random Forests algorithm (and the stacked model), the prediction for the 20 test cases is provided below:
+
+```{r}
+testdataPred3RF
+combPredV
+```
